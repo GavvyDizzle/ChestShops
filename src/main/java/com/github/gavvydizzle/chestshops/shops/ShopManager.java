@@ -18,7 +18,9 @@ import org.bukkit.block.data.Directional;
 import org.bukkit.block.data.type.WallSign;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
@@ -38,6 +40,7 @@ import java.util.*;
 public class ShopManager implements Listener {
 
     private final RentableRegionsAPI rentableRegionsAPI;
+    private final ShopRegionManager shopRegionManager;
     private List<String> shopWorlds, tutorialMessages;
     private final HashMap<Location, ChestShop> chestShopHashMap; // Container Location, ChestShop
     private final HashSet<UUID> playersPreviewingShops, playersBypassingShopMessages;
@@ -49,6 +52,7 @@ public class ShopManager implements Listener {
 
     public ShopManager() {
         rentableRegionsAPI = RentableRegionsAPI.getInstance();
+        shopRegionManager = new ShopRegionManager();
 
         shopWorlds = new ArrayList<>();
         tutorialMessages = new ArrayList<>();
@@ -162,7 +166,7 @@ public class ShopManager implements Listener {
     }
 
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.LOW)
     public void onClick(PlayerInteractEvent e) {
         if (e.getClickedBlock() == null || e.getPlayer().isSneaking()) return;
         Player player = e.getPlayer();
@@ -178,15 +182,20 @@ public class ShopManager implements Listener {
             if (shop.isQueueShop() && shop.getUuid() == e.getPlayer().getUniqueId()) {
                 if (e.getAction() == Action.RIGHT_CLICK_BLOCK) {
                     onQueuedShopClick(e.getPlayer(), shop, e.getClickedBlock());
+                    e.setCancelled(true);
                 }
             }
             // Preview shop contents
             else if (e.getAction() == Action.LEFT_CLICK_BLOCK) {
                 onShopPreview(player, shop);
+                e.setCancelled(true);
+                e.setUseItemInHand(Event.Result.DENY);
             }
             // Using the shop to buy/sell items
             else if (e.getAction() == Action.RIGHT_CLICK_BLOCK) {
                 onShopUse(player, shop, e.getAction());
+                e.setCancelled(true);
+                e.setUseItemInHand(Event.Result.DENY);
             }
         }
     }
@@ -273,12 +282,12 @@ public class ShopManager implements Listener {
         if (action == Action.RIGHT_CLICK_BLOCK) {
             if (shop.getType() == ShopType.SELL) { // The shop is looking to buy something
                 if (ChestShops.getEconomy().getBalance(Bukkit.getOfflinePlayer(shop.getUuid())) < shop.getPrice()) {
-                    player.sendMessage(Colors.conv("&cPlayer does not have enough funds!"));
+                    player.sendMessage(Colors.conv("&c"  + PlayerNameCache.get(shop.getUuid()) + " does not have enough funds!"));
                     return;
                 }
 
                 if (!chestHasSpace(chestInventory, shop.getItem(), shop.getAmount())) {
-                    player.sendMessage(Colors.conv("&cPlayer's shop is full!"));
+                    player.sendMessage(Colors.conv("&cThis shop is full!"));
                     return;
                 }
 
@@ -368,14 +377,16 @@ public class ShopManager implements Listener {
         Player player = e.getPlayer();
         Block block = e.getBlock();
 
-        // Not a sign or in an invalid world
-        if (!block.getType().toString().contains("WALL_SIGN")) return;
-        if (!shopWorlds.contains(block.getWorld().getName().toLowerCase())) return;
+        // Not a sign or in an invalid world or not in a valid region
+        if (!block.getType().toString().contains("WALL_SIGN") || !shopWorlds.contains(block.getWorld().getName().toLowerCase())) return;
 
         // Shop not connected to valid container
         Block containerBlock = getAttachedBlock(e.getBlock());
         if (containerBlock == null) return;
         if (isInvalidContainer(containerBlock)) return;
+
+        // Region check (ignore if the player has bypass permission)
+        if (!player.hasPermission("chestshops.bypass") && shopRegionManager.isNotInValidRegion(block)) return;
 
         Bukkit.getScheduler().scheduleSyncDelayedTask(ChestShops.getInstance(), () -> {
             Sign blockSign = (Sign) block.getState();
@@ -414,26 +425,19 @@ public class ShopManager implements Listener {
                 return;
             }
 
-            // Shop already exists //TODO - Might need outside task
+            // Shop already exists at this location
             if (chestShopHashMap.get(containerBlock.getLocation()) != null) {
                 e.getBlock().breakNaturally();
                 player.sendMessage(Colors.conv("&cThere's already a shop here!"));
                 return;
             }
 
-            /*
-            // Player has another shop queued
-            if (queuedShops.containsKey(player.getUniqueId())) {
-                e.getBlock().breakNaturally();
-                player.sendMessage(Colors.conv("&cYou must finish making your last shop before making a new one!"));
-                return;
-            }
-             */
-
             ChestShop shop = new ChestShop(sellAmount, sellPrice, shopType, player.getUniqueId(), blockSign.getLocation());
             shop.setContainerLocation(Objects.requireNonNull(getAttachedBlock(shop.getSignLocation().getBlock())).getLocation());
             shop.setQueueShop(true);
             chestShopHashMap.put(shop.getContainerLocation(), shop);
+
+            blockSign.setWaxed(true);
 
             blockSign.setLine(0, queuedShopLines[0]);
             blockSign.setLine(1, queuedShopLines[1]);

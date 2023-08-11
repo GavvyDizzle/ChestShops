@@ -6,6 +6,7 @@ import com.github.gavvydizzle.chestshops.commands.PlayerCommandManager;
 import com.github.gavvydizzle.chestshops.database.Database;
 import com.github.gavvydizzle.chestshops.database.SQLite;
 import com.github.gavvydizzle.chestshops.shops.ShopManager;
+import com.github.gavvydizzle.chestshops.shops.ShopRegionManager;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.RegisteredServiceProvider;
@@ -17,6 +18,11 @@ public class ChestShops extends JavaPlugin {
     private Database database;
 
     private ShopManager shopManager;
+
+    @Override
+    public void onLoad() {
+        ShopRegionManager.initFlags();
+    }
 
     @Override
     public void onEnable() {

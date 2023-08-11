@@ -1,7 +1,7 @@
 name: ChestShops
 version: '${project.version}'
 main: com.github.gavvydizzle.chestshops.ChestShops
-api-version: 1.19
+api-version: '1.20'
 authors: [GavvyDizzle]
 depend: [DecentHolograms, InteractiveChat, RentableRegions, ServerUtils, Vault, WorldGuard]
 commands:
